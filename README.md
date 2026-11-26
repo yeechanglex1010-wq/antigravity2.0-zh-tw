@@ -4,10 +4,9 @@
 
 | 安裝方式 | 版本與平台 | 使用者需要做的事 |
 |----------|------------|------------------|
-| **傳統版** | v1.0.17，Windows／macOS | 下載 zip 或 Git Clone，**⚠️ 首次安裝及每次更新本套件後，先手動執行 `npm install`**，再執行安裝或還原腳本。 |
-| **圖形化版** | v2.0.10，Windows／macOS | 下載對應安裝器，執行圖形化安裝或還原；**⚠️ 不需使用者手動執行 npm 指令**。 |
+| **傳統版** | v1.0.18，Windows／macOS | 下載或 Git Clone 本專案，**⚠️ 首次安裝及每次更新本套件後，先手動執行 `npm install`**，再執行安裝或還原腳本。 |
 
-將 Antigravity 2.0 的介面翻譯為繁體中文（台灣）。翻譯字典以 Antigravity 2.0 v2.35.2 介面為基準。請依照下方對應的操作區塊安裝與還原。
+本專案基於 [workkkkkkez00m/antigravity2.0-zh-tw](https://github.com/workkkkkkez00m/antigravity2.0-zh-tw) 維護與擴充，將 Antigravity 2.0 的介面翻譯為繁體中文（台灣），並針對 **Antigravity 2.0 v2.35.2** 完成程式碼適配、詞彙擴充與自動化驗證。請依照下方對應的操作區塊安裝與還原。
 
 Antigravity 2.0 Traditional Chinese Localization Toolkit is a source-available project that translates the Antigravity 2.0 interface into Traditional Chinese. It works by unpacking and repacking the local Electron ASAR file, without modifying official core binaries or redistributing any official Antigravity files. The toolkit supports Windows and macOS, automatically creates backups, runs entirely on the user’s local machine, and avoids translating code editors, terminals, input fields, debug consoles, and other areas where localization could interfere with development workflows.
 
@@ -31,13 +30,15 @@ Antigravity 2.0 Traditional Chinese Localization Toolkit is a source-available p
 
 本專案由個人維護，圖形化安裝器目前尚未提供程式碼簽章，系統可能顯示安全性警告。若對執行未簽章的安裝器有疑慮，可選擇先檢視程式碼、再自行操作的傳統版。
 
-## 版本更新重點
+## 版本更新重點（v1.0.18 — Antigravity v2.35.2 適配版）
 
-- 補齊 SSH 遠端連線介面翻譯，涵蓋主機搜尋、連線設定、連線狀態與錯誤提示。
-- 完善內建瀏覽器翻譯，涵蓋網址列、元素註解、網站資訊、Cookie 管理與安全憑證資訊。
-- 補齊對話側邊欄與自訂區塊文字，包括側邊問題、目標、文件、連結、已修改檔案、上傳項目與已使用的 Skills。
-- 擴充模型選單與提示翻譯，涵蓋模型群組、能力說明、思考強度、配額使用及模型下架與方案存取權通知。
-- 補齊本機對話管理與 Swarm 協調器相關功能說明。
+- **修復 `dist/tray.js` v2.35.2 函式簽章變更**：支援 `createTray(actions, onClick)` 與 `insertTrayMenuItem(position, options)`，正確翻譯工作列右鍵選單與非同步插入的「連線至 WSL／在本機重新開啟」項目。
+- **修復 `dist/menu.js` 非同步 WSL 選單與 macOS 更新選單動作**：
+  - 修正 `addWslConnectMenu` 在主選單已中文化（`檔案`／`檔案(&F)`）後仍能定位 `File` 子選單並翻譯插入項目。
+  - 同步映射 `updater_1.updateActions` 的繁體中文鍵值，確保 macOS「檢查更新」選單動作正常運作。
+- **補齊 Electron 原生對話框與啟動／斷線頁面翻譯**：涵蓋 `dist/main.js`（確認結束／WSL 提示／Dock 選單）、`dist/updater.js`（更新對話框與狀態文字）、`dist/provisionSplash.js`（WSL 安裝啟動畫面）、`dist/remote/disconnectedPage.js`（SSH 斷線重連頁面）與 `dist/ideInstall/wizardHtml.js`。
+- **擴充 v2.35.2 翻譯字典與動態規則**：6 個字典檔新增 330 筆詞彙（總計 1,583 筆），涵蓋遠端控制、SSH、內建瀏覽器與安全性警告、沙盒模式、終端機面板、MCP／外掛／市集、協調器與子代理、GitHub 權限、工作區與語音等介面文字，並新增草稿恢復與 WSL／SSH 動態狀態翻譯規則。
+- **新增自動化沙盒驗證腳本**：執行 `npm test` 即可在不觸動正式安裝檔案的情況下，對 Antigravity v2.35.2 `app.asar` 副本完成注入、語法檢查、行為測試、冪等性與位元級還原驗證。
 
 ## 使用畫面
 
@@ -91,7 +92,7 @@ npm -v
 Windows 請先開啟「命令提示字元（cmd）」或其他可使用 Git 的終端機，macOS 請開啟「終端機（Terminal）」。以下指令需在終端機／命令提示字元中執行：
 
 ```bash
-git clone https://github.com/workkkkkkez00m/antigravity2.0-zh-tw.git
+git clone https://github.com/yeechanglex1010-wq/antigravity2.0-zh-tw.git
 cd antigravity2.0-zh-tw
 npm install
 ```
@@ -234,12 +235,10 @@ Antigravity 官方更新時，會重新覆蓋 `app.asar` 檔案，導致先前�
 
 ## 支援狀態
 
-| 方式 | 平台 | 安裝 | 還原 | UI 驗證 |
-|------|------|------|------|---------|
-| v1.0.17 傳統版 | macOS | ✅ 已通過 | ✅ 已通過 | ✅ 已通過 |
-| v1.0.17 傳統版 | Windows | ✅ 已通過 | ✅ 已通過 | ✅ 已通過 |
-| v2.0.10 圖形化版 | macOS | ✅ 已通過 | ✅ 已通過 | ✅ 已通過 |
-| v2.0.10 圖形化版 | Windows | ✅ 已通過 | ✅ 已通過 | ✅ 已通過 |
+| 方式 | 平台 | 安裝 | 還原 | UI／沙盒驗證 |
+|------|------|------|------|--------------|
+| v1.0.18 傳統版 | Windows (Antigravity v2.35.2) | ✅ 已通過 | ✅ 已通過 | ✅ 自動化沙盒驗證通過 |
+| v1.0.17 傳統版 | macOS / Windows | ✅ 已通過 | ✅ 已通過 | ✅ 已通過 |
 
 > 翻譯範圍持續補齊中。若在使用過程中發現未翻譯的文字，歡迎回報。
 
@@ -258,7 +257,7 @@ Antigravity 官方更新時，會重新覆蓋 `app.asar` 檔案，導致先前�
 | 啟動畫面文字 | 載入動畫文字 |
 | 鍵盤快捷鍵頁 | 快捷鍵描述與分類 |
 
-> 目前 6 個字典檔共 1,253 筆翻譯詞彙（依各字典檔 key 數合計）。
+> 目前 6 個字典檔共 1,583 筆翻譯詞彙（依各字典檔 key 數合計）。
 
 ### 不翻譯區域
 

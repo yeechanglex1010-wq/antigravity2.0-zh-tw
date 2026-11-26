@@ -6,7 +6,7 @@ const crypto = require('crypto');
 
 const PROJECT_ID = 'antigravity2-zh-hant-tw';
 const PROJECT_NAME = 'Antigravity 2.0 繁體中文套件';
-const ENGINE_VERSION = '1.0.17';
+const ENGINE_VERSION = '1.0.18';
 const SIGNATURE = 'ZH-HANT-TW';
 
 const SIGNATURE_START = '/* --- ANTIGRAVITY ZH-HANT-TW LOCALIZATION START --- */';
@@ -18,6 +18,38 @@ function resolveAsarCli() {
         return localAsarPath;
     }
     return null;
+}
+
+function collectUnpackedDirs(asarPath) {
+    try {
+        const asar = require('@electron/asar');
+        asar.uncache(asarPath);
+        const rawHeader = asar.getRawHeader(asarPath);
+        const dirs = new Set();
+        const walk = (entries, prefix) => {
+            for (const [name, entry] of Object.entries(entries || {})) {
+                const rel = prefix ? `${prefix}/${name}` : name;
+                if (entry.files) {
+                    if (entry.unpacked) {
+                        dirs.add(rel);
+                    } else {
+                        walk(entry.files, rel);
+                    }
+                } else if (entry.unpacked) {
+                    const parts = rel.split('/');
+                    if (parts.length >= 2 && parts[0] === 'node_modules') {
+                        dirs.add(`${parts[0]}/${parts[1]}`);
+                    } else if (parts.length >= 2) {
+                        dirs.add(parts.slice(0, -1).join('/'));
+                    }
+                }
+            }
+        };
+        walk(rawHeader.header.files, '');
+        return [...dirs];
+    } catch (_) {
+        return [];
+    }
 }
 
 function runAsarCommand(action, args) {
@@ -225,6 +257,22 @@ function generateJs() {
         const breakdownCountMatch = valNorm.match(/^Show ([0-9]+) breakdowns?$/);
         if (breakdownCountMatch) {
             return '顯示 ' + breakdownCountMatch[1] + ' 項明細';
+        }
+        const resumeDraftsMatch = valNorm.match(/^Resume ([0-9]+) comment drafts?$/);
+        if (resumeDraftsMatch) {
+            return '繼續編輯 ' + resumeDraftsMatch[1] + ' 則留言草稿';
+        }
+        const setupWslMatch = valNorm.match(/^Setting up WSL:\\s*(.+)$/);
+        if (setupWslMatch) {
+            return '正在設定 WSL：' + setupWslMatch[1];
+        }
+        const reconnectingHostMatch = valNorm.match(/^Reconnecting to (.+?)(?:…|\\.\\.\\.)$/);
+        if (reconnectingHostMatch) {
+            return '正在重新連線至 ' + reconnectingHostMatch[1] + '…';
+        }
+        const disconnectedHostMatch = valNorm.match(/^Disconnected from (.+)$/);
+        if (disconnectedHostMatch) {
+            return '已中斷與 ' + disconnectedHostMatch[1] + ' 的連線';
         }
         for (const [pattern, prefix, suffix] of sshConnectionStatusRules) {
             const match = valNorm.match(pattern);
@@ -885,51 +933,42 @@ function cleanJsContent(content) {
 }
 
 function cleanMenuJsContent(content) {
-    const startMarks = [
-        '/* --- MENU TRANSLATION START --- */',
-        '// =========================================='
-    ];
-    const endMarks = [
-        '/* --- MENU TRANSLATION END --- */',
-        'translateMenu(menu.items);'
-    ];
-
     let cleaned = content;
 
-    for (const startMark of startMarks) {
-        const startIdx = cleaned.indexOf(startMark);
-        if (startIdx === -1) continue;
+    const rangePairs = [
+        ['/* --- MENU TRANSLATION START --- */', '/* --- MENU TRANSLATION END --- */'],
+        ['// ==========================================', 'translateMenu(menu.items);'],
+        ['/* --- MENU TRANSLATION HELPER START --- */', '/* --- MENU TRANSLATION HELPER END --- */'],
+        ['/* --- MENU TRANSLATION CALL START --- */', '/* --- MENU TRANSLATION CALL END --- */']
+    ];
 
-        let endIdx = -1;
-        let endMarkUsed = '';
-
-        for (const endMark of endMarks) {
-            const idx = cleaned.indexOf(endMark, startIdx);
-            if (idx !== -1 && (endIdx === -1 || idx < endIdx)) {
-                endIdx = idx;
-                endMarkUsed = endMark;
-            }
-        }
-
-        if (endIdx !== -1 && startIdx < endIdx) {
-            cleaned = cleaned.substring(0, startIdx) + cleaned.substring(endIdx + endMarkUsed.length);
-        }
+    for (const [startMark, endMark] of rangePairs) {
+        const regex = new RegExp(escapeRegExp(startMark) + '[\\s\\S]*?' + escapeRegExp(endMark) + '\\s*', 'g');
+        cleaned = cleaned.replace(regex, '');
     }
+
+    const submenuLookupRegex = /\/\*\s*---\s*MENU SUBMENU LOOKUP START\s*---\s*\*\/[\s\S]*?\/\*\s*---\s*MENU SUBMENU LOOKUP END\s*---\s*\*\//g;
+    cleaned = cleaned.replace(
+        submenuLookupRegex,
+        'const submenuItem = appMenu.items.find((item) => item.label === submenuLabel);'
+    );
 
     return cleaned;
 }
 
 function cleanTrayJsContent(content) {
-    const startMark = '/* --- TRAY TRANSLATION START --- */';
-    const endMark = '/* --- TRAY TRANSLATION END --- */';
-    const startIdx = content.indexOf(startMark);
-    const endIdx = content.indexOf(endMark);
+    let cleaned = content;
+    const rangePairs = [
+        ['/* --- TRAY TRANSLATION START --- */', '/* --- TRAY TRANSLATION END --- */'],
+        ['/* --- TRAY INSERT TRANSLATION START --- */', '/* --- TRAY INSERT TRANSLATION END --- */']
+    ];
 
-    if (startIdx !== -1 && endIdx !== -1 && startIdx < endIdx) {
-        return content.substring(0, startIdx) + content.substring(endIdx + endMark.length);
+    for (const [startMark, endMark] of rangePairs) {
+        const regex = new RegExp('\\s*' + escapeRegExp(startMark) + '[\\s\\S]*?' + escapeRegExp(endMark), 'g');
+        cleaned = cleaned.replace(regex, '');
     }
 
-    return content;
+    return cleaned;
 }
 
 function escapeRegExp(string) {
@@ -1109,95 +1148,300 @@ function runCommandSync(cmd) {
 }
 
 function createMenuTranslationPatch() {
-    return `
-    /* --- MENU TRANSLATION START --- */
-    const translations = {
-        'File': '檔案',
-        'Edit': '編輯',
-        'View': '檢視',
-        'Window': '視窗',
-        'Help': '說明',
-        'New Window': '新增視窗',
-        'Create Project': '建立專案',
-        'Command Palette': '命令選擇區',
-        'Docs': '使用說明',
-        'Check for Updates': '檢查更新',
-        'Toggle Developer Tools': '切換開發者工具',
-        'Undo': '復原',
-        'Redo': '重做',
-        'Cut': '剪下',
-        'Copy': '複製',
-        'Paste': '貼上',
-        'Select All': '全選',
-        'Minimize': '最小化',
-        'Maximize': '最大化',
-        'Close': '關閉',
-        'Zoom': '縮放',
-        'Reset Zoom': '重設縮放',
-        'Zoom In': '放大',
-        'Zoom Out': '縮小',
-        'Toggle Full Screen': '切換全螢幕',
-        'Bring All to Front': '將所有視窗移至最前',
-        'Reload': '重新載入',
-        'Force Reload': '強制重新載入',
-        'Actual Size': '實際大小',
-        'Paste and Match Style': '貼上並符合樣式',
-        'Delete': '刪除',
-        'Substitutions': '替換',
-        'Show Substitutions': '顯示替換',
-        'Smart Quotes': '智慧引號',
-        'Smart Dashes': '智慧破折號',
-        'Text Replacement': '文字替換',
-        'Speech': '語音',
-        'Start Speaking': '開始朗讀',
-        'Stop Speaking': '停止朗讀',
-        'Close Window': '關閉視窗'
-    };
+    return `/* --- MENU TRANSLATION HELPER START --- */
+const __zhMenuTranslations = {
+    'File': '檔案',
+    'Edit': '編輯',
+    'View': '檢視',
+    'Window': '視窗',
+    'Help': '說明',
+    'New Window': '新增視窗',
+    'Create Project': '建立專案',
+    'Command Palette': '命令選擇區',
+    'Docs': '使用說明',
+    'Check for Updates': '檢查更新',
+    'Checking for Updates...': '正在檢查更新...',
+    'Downloading Update...': '正在下載更新...',
+    'Restart to Update': '重新啟動以更新',
+    'Connect to WSL': '連線至 WSL',
+    'Reopen Locally': '在本機重新開啟',
+    'Toggle Developer Tools': '切換開發者工具',
+    'Undo': '復原',
+    'Redo': '重做',
+    'Cut': '剪下',
+    'Copy': '複製',
+    'Paste': '貼上',
+    'Select All': '全選',
+    'Minimize': '最小化',
+    'Maximize': '最大化',
+    'Close': '關閉',
+    'Zoom': '縮放',
+    'Reset Zoom': '重設縮放',
+    'Zoom In': '放大',
+    'Zoom Out': '縮小',
+    'Toggle Full Screen': '切換全螢幕',
+    'Bring All to Front': '將所有視窗移至最前',
+    'Reload': '重新載入',
+    'Force Reload': '強制重新載入',
+    'Actual Size': '實際大小',
+    'Paste and Match Style': '貼上並符合樣式',
+    'Delete': '刪除',
+    'Substitutions': '替換',
+    'Show Substitutions': '顯示替換',
+    'Smart Quotes': '智慧引號',
+    'Smart Dashes': '智慧破折號',
+    'Text Replacement': '文字替換',
+    'Speech': '語音',
+    'Start Speaking': '開始朗讀',
+    'Stop Speaking': '停止朗讀',
+    'Close Window': '關閉視窗'
+};
 
-    function translateMenu(items) {
-        for (const item of items) {
-            const label = item.label || '';
-            let cleanLabel = label;
-            let mnemonic = '';
-
-            const match = label.match(/&([a-zA-Z])/);
-            if (match) {
-                mnemonic = '(&' + match[1] + ')';
-                cleanLabel = label.replace('&', '');
-            }
-
-            if (translations[cleanLabel]) {
-                item.label = translations[cleanLabel] + mnemonic;
-            } else if (translations[label]) {
-                item.label = translations[label];
-            }
-
-            if (item.submenu && item.submenu.items) {
-                translateMenu(item.submenu.items);
-            }
-        }
-    }
-
-    translateMenu(menu.items);
-    /* --- MENU TRANSLATION END --- */
-    `;
+function __stripMenuMnemonic(label) {
+    return (label || '').replace(/\\(&[a-zA-Z]\\)$/, '').replace(/&([a-zA-Z])/g, '$1');
 }
 
-function createTrayCreatePatch() {
-    return `function createTray(actions) {
-    /* --- TRAY TRANSLATION START --- */
-    const translations = {
-        'No agents running': '目前沒有執行中的 Agent',
-        'Open Antigravity': '開啟 Antigravity',
-        'Quit': '結束'
-    };
+function __resolveMenuLabelMatch(actualLabel, targetLabel) {
+    if (actualLabel === targetLabel) return true;
+    const cleanActual = __stripMenuMnemonic(actualLabel);
+    if (cleanActual === targetLabel) return true;
+    const translatedTarget = __zhMenuTranslations[targetLabel];
+    return Boolean(translatedTarget && cleanActual === translatedTarget);
+}
 
-    for (const item of actions) {
-        if (translations[item.label]) {
-            item.label = translations[item.label];
+function __syncUpdateActions() {
+    if (typeof updater_1 === 'undefined' || !updater_1 || !updater_1.updateActions || !updater_1.MenuUpdateStep) {
+        return;
+    }
+    const pairs = [
+        ['Check for Updates', updater_1.MenuUpdateStep.CheckForUpdates],
+        ['Checking for Updates...', updater_1.MenuUpdateStep.CheckingForUpdates],
+        ['Downloading Update...', updater_1.MenuUpdateStep.DownloadingUpdate],
+        ['Restart to Update', updater_1.MenuUpdateStep.RestartToUpdate]
+    ];
+    for (const [enLabel, stepKey] of pairs) {
+        const zhLabel = __zhMenuTranslations[enLabel];
+        if (zhLabel && Object.prototype.hasOwnProperty.call(updater_1.updateActions, stepKey)) {
+            updater_1.updateActions[zhLabel] = updater_1.updateActions[stepKey];
         }
     }
+}
+
+function __translateMenuItems(items) {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+        const label = item.label || '';
+        let cleanLabel = label;
+        let mnemonic = '';
+
+        const match = label.match(/&([a-zA-Z])/);
+        if (match && !/\\(&[a-zA-Z]\\)$/.test(label)) {
+            mnemonic = '(&' + match[1] + ')';
+            cleanLabel = label.replace('&', '');
+        }
+
+        if (__zhMenuTranslations[cleanLabel]) {
+            item.label = __zhMenuTranslations[cleanLabel] + mnemonic;
+        } else if (__zhMenuTranslations[label]) {
+            item.label = __zhMenuTranslations[label];
+        }
+
+        if (item.submenu && item.submenu.items) {
+            __translateMenuItems(item.submenu.items);
+        }
+    }
+}
+
+function __translateAppMenu(menu) {
+    if (!menu || !menu.items) return;
+    __syncUpdateActions();
+    __translateMenuItems(menu.items);
+}
+/* --- MENU TRANSLATION HELPER END --- */
+`;
+}
+
+function patchMenuJs(menuContent) {
+    const menuCleaned = cleanMenuJsContent(menuContent);
+    const targetCall = 'electron_1.Menu.setApplicationMenu(menu);';
+    if (!menuCleaned.includes(targetCall)) {
+        return { patched: menuCleaned, applied: false };
+    }
+
+    const helperBlock = createMenuTranslationPatch();
+    let result = menuCleaned;
+    const setupAnchor = 'function setupApplicationMenu';
+    const setupIdx = result.indexOf(setupAnchor);
+    if (setupIdx !== -1) {
+        result = result.substring(0, setupIdx) + helperBlock + result.substring(setupIdx);
+    } else {
+        const firstCallIdx = result.indexOf(targetCall);
+        result = result.substring(0, firstCallIdx) + helperBlock + result.substring(firstCallIdx);
+    }
+
+    result = result.split(targetCall).join(
+        '/* --- MENU TRANSLATION CALL START --- */ __translateAppMenu(menu); /* --- MENU TRANSLATION CALL END --- */\n    ' + targetCall
+    );
+
+    const submenuLookup = 'const submenuItem = appMenu.items.find((item) => item.label === submenuLabel);';
+    if (result.includes(submenuLookup)) {
+        result = result.replace(
+            submenuLookup,
+            '/* --- MENU SUBMENU LOOKUP START --- */ const submenuItem = appMenu.items.find((item) => __resolveMenuLabelMatch(item.label, submenuLabel)); /* --- MENU SUBMENU LOOKUP END --- */'
+        );
+    }
+
+    return { patched: result, applied: true };
+}
+
+function createTrayCreatePatch(matchedSignature = 'function createTray(actions) {') {
+    return `${matchedSignature}
+    /* --- TRAY TRANSLATION START --- */
+    const __zhTrayTranslations = {
+        'No agents running': '目前沒有執行中的 Agent',
+        'Open Antigravity': '開啟 Antigravity',
+        'Quit': '結束',
+        'Connect to WSL': '連線至 WSL',
+        'Reopen Locally': '在本機重新開啟'
+    };
+
+    const __translateTrayOptions = (items) => {
+        if (!Array.isArray(items)) return;
+        for (const item of items) {
+            if (!item || typeof item !== 'object') continue;
+            if (item.label && __zhTrayTranslations[item.label]) {
+                item.label = __zhTrayTranslations[item.label];
+            }
+            if (Array.isArray(item.submenu)) {
+                __translateTrayOptions(item.submenu);
+            }
+        }
+    };
+    __translateTrayOptions(actions);
     /* --- TRAY TRANSLATION END --- */`;
+}
+
+function patchTrayJs(trayContent) {
+    let trayPatched = cleanTrayJsContent(trayContent);
+    const createTrayRegex = /function\s+createTray\s*\(\s*actions(?:\s*,\s*onClick)?\s*\)\s*\{/;
+    const createMatch = trayPatched.match(createTrayRegex);
+    if (createMatch) {
+        trayPatched = trayPatched.replace(createTrayRegex, createTrayCreatePatch(createMatch[0]));
+    } else {
+        console.warn('[警告] 找不到 tray.js createTray 插入點，略過工作列選單建立文字注入。');
+    }
+
+    const insertTrayRegex = /function\s+insertTrayMenuItem\s*\(\s*position\s*,\s*options\s*\)\s*\{/;
+    const insertMatch = trayPatched.match(insertTrayRegex);
+    if (insertMatch) {
+        const insertPatch = `${insertMatch[0]}
+    /* --- TRAY INSERT TRANSLATION START --- */
+    const __zhInsertTrayTranslations = {
+        'No agents running': '目前沒有執行中的 Agent',
+        'Open Antigravity': '開啟 Antigravity',
+        'Quit': '結束',
+        'Connect to WSL': '連線至 WSL',
+        'Reopen Locally': '在本機重新開啟'
+    };
+    const __translateInsertOptions = (opt) => {
+        if (!opt || typeof opt !== 'object') return;
+        if (opt.label && __zhInsertTrayTranslations[opt.label]) {
+            opt.label = __zhInsertTrayTranslations[opt.label];
+        }
+        if (Array.isArray(opt.submenu)) {
+            for (const sub of opt.submenu) __translateInsertOptions(sub);
+        }
+    };
+    __translateInsertOptions(options);
+    /* --- TRAY INSERT TRANSLATION END --- */`;
+        trayPatched = trayPatched.replace(insertTrayRegex, insertPatch);
+    }
+
+    const countRegex = /countItem\.label\s*=\s*\([\s\S]*?' running';/g;
+    const replacementCount = "countItem.label = count > 0 ? `${count} 個 Agent 執行中` : '目前沒有執行中的 Agent';";
+    trayPatched = trayPatched.replace(countRegex, replacementCount);
+
+    return trayPatched;
+}
+
+function applyStringReplacements(content, pairs) {
+    let updated = content;
+    for (const [target, replacement] of pairs) {
+        if (updated.includes(target)) {
+            updated = updated.split(target).join(replacement);
+        }
+    }
+    return updated;
+}
+
+function patchElectronUiFiles(tempDir) {
+    const filePatches = [
+        [
+            path.join('dist', 'loadingOverlay.js'),
+            [['<div class="text">Loading Antigravity</div>', '<div class="text">正在啟動 Antigravity...</div>']]
+        ],
+        [
+            path.join('dist', 'main.js'),
+            [
+                ["buttons: ['Cancel', 'Quit'],", "buttons: ['取消', '結束'],"],
+                ["title: 'Confirm Quit',", "title: '確認結束',"],
+                ["message: 'Are you sure you want to quit?',", "message: '確定要結束 Antigravity 嗎？',"],
+                ["detail: 'There may be agents or background tasks running.',", "detail: '目前可能仍有執行中的代理或背景工作。',"],
+                ["title: 'WSL distro not found',", "title: '找不到 WSL 發行版本',"],
+                ["detail: 'Antigravity opened on Windows instead.',", "detail: '已改在 Windows 上開啟 Antigravity。',"],
+                ["label: 'New Window',", "label: '新增視窗',"]
+            ]
+        ],
+        [
+            path.join('dist', 'updater.js'),
+            [
+                ["title: 'Check for Updates',", "title: '檢查更新',"],
+                ["message: 'No updates available',", "message: '目前沒有可用更新',"],
+                ["buttons: ['OK'],", "buttons: ['確定'],"],
+                [
+                    "item.label = step;",
+                    "const __zhStepLabels = { 'Check for Updates': '檢查更新', 'Checking for Updates...': '正在檢查更新...', 'Downloading Update...': '正在下載更新...', 'Restart to Update': '重新啟動以更新' }; item.label = __zhStepLabels[step] || step;"
+                ]
+            ]
+        ],
+        [
+            path.join('dist', 'provisionSplash.js'),
+            [['<div>Setting up WSL: ${escapeHtml(distro)}</div>', '<div>正在設定 WSL：${escapeHtml(distro)}</div>']]
+        ],
+        [
+            path.join('dist', 'remote', 'disconnectedPage.js'),
+            [
+                ["reconnect: 'Reconnect',", "reconnect: '重新連線',"],
+                ["stop: 'Stop Server',", "stop: '停止伺服器',"],
+                ["close: 'Close',", "close: '關閉',"],
+                ["? 'Restarting…'", "? '正在重新啟動…'"],
+                ["? 'Reconnecting…'", "? '正在重新連線…'"],
+                [": 'Disconnected';", ": '已中斷連線';"],
+                ["? `Restarting the Antigravity server on ${host}…`", "? `正在重新啟動 ${host} 上的 Antigravity 伺服器…`"],
+                ["? `Reconnecting to ${host}…`", "? `正在重新連線至 ${host}…`"],
+                [": `Disconnected from ${host}`;", ": `已中斷與 ${host} 的連線`;"]
+            ]
+        ],
+        [
+            path.join('dist', 'ideInstall', 'wizardHtml.js'),
+            [
+                ['<title>Welcome to Antigravity</title>', '<title>歡迎使用 Antigravity</title>'],
+                ['<h1>Welcome to the new Antigravity!</h1>', '<h1>歡迎使用全新 Antigravity！</h1>'],
+                ['<span>Download the Antigravity IDE</span>', '<span>下載 Antigravity IDE</span>'],
+                ['>Explore the new Antigravity</button>', '>探索全新 Antigravity</button>']
+            ]
+        ]
+    ];
+
+    for (const [relPath, pairs] of filePatches) {
+        const fullPath = path.join(tempDir, relPath);
+        if (!fs.existsSync(fullPath)) continue;
+        const original = fs.readFileSync(fullPath, 'utf-8');
+        const patched = applyStringReplacements(original, pairs);
+        if (patched !== original) {
+            fs.writeFileSync(fullPath, patched, 'utf-8');
+        }
+    }
 }
 
 function verifyAsar(asarPath, localized) {
@@ -1384,6 +1628,7 @@ function install20(resourcesDir) {
         ensureOfficialBackup(asarPath, bakPath, path.join(transactionDir, 'backup.asar'));
 
     const tempDir = path.join(transactionDir, 'unpacked');
+    const unpackedDirs = collectUnpackedDirs(asarPath);
 
     console.log('[展開] 正在展開 app.asar...');
     const extractRes = runAsarCommand('extract', [asarPath, tempDir]);
@@ -1409,15 +1654,9 @@ function install20(resourcesDir) {
     const menuPath = path.join(tempDir, 'dist', 'menu.js');
     if (fs.existsSync(menuPath)) {
         const menuContent = fs.readFileSync(menuPath, 'utf-8');
-        const menuCleaned = cleanMenuJsContent(menuContent);
-        const menuTranslationJs = createMenuTranslationPatch();
-
-        const targetStr = 'electron_1.Menu.setApplicationMenu(menu);';
-        const idx = menuCleaned.indexOf(targetStr);
-
-        if (idx !== -1) {
-            const patchedMenuContent = menuCleaned.substring(0, idx) + menuTranslationJs + '\n    ' + menuCleaned.substring(idx);
-            fs.writeFileSync(menuPath, patchedMenuContent, 'utf-8');
+        const menuRes = patchMenuJs(menuContent);
+        if (menuRes.applied) {
+            fs.writeFileSync(menuPath, menuRes.patched, 'utf-8');
         } else {
             console.warn('[警告] 找不到 menu.js 插入點，略過系統選單文字注入。');
         }
@@ -1426,33 +1665,20 @@ function install20(resourcesDir) {
     const trayPath = path.join(tempDir, 'dist', 'tray.js');
     if (fs.existsSync(trayPath)) {
         const trayContent = fs.readFileSync(trayPath, 'utf-8');
-        const trayCleaned = cleanTrayJsContent(trayContent);
-
-        const targetCreate = 'function createTray(actions) {';
-        const replacementCreate = createTrayCreatePatch();
-
-        let trayPatched = trayCleaned.replace(targetCreate, replacementCreate);
-
-        const countRegex = /countItem\.label\s*=\s*\([\s\S]*?' running';/g;
-        const replacementCount = "countItem.label = count > 0 ? `${count} 個 Agent 執行中` : '目前沒有執行中的 Agent';";
-        trayPatched = trayPatched.replace(countRegex, replacementCount);
-
+        const trayPatched = patchTrayJs(trayContent);
         fs.writeFileSync(trayPath, trayPatched, 'utf-8');
     }
 
-    const loadingPath = path.join(tempDir, 'dist', 'loadingOverlay.js');
-    if (fs.existsSync(loadingPath)) {
-        let loadingContent = fs.readFileSync(loadingPath, 'utf-8');
-
-        const targetText = '<div class="text">Loading Antigravity</div>';
-        const replacementText = '<div class="text">正在啟動 Antigravity...</div>';
-        loadingContent = loadingContent.replace(targetText, replacementText);
-
-        fs.writeFileSync(loadingPath, loadingContent, 'utf-8');
-    }
+    patchElectronUiFiles(tempDir);
 
     console.log('[打包] 正在重新打包 app.asar...');
-    const packRes = runAsarCommand('pack', [tempDir, candidatePath]);
+    const packArgs = [tempDir, candidatePath];
+    if (unpackedDirs.length === 1) {
+        packArgs.push('--unpack-dir', unpackedDirs[0]);
+    } else if (unpackedDirs.length > 1) {
+        packArgs.push('--unpack-dir', `{${unpackedDirs.join(',')}}`);
+    }
+    const packRes = runAsarCommand('pack', packArgs);
     fs.rmSync(tempDir, { recursive: true, force: true });
 
     if (!packRes.success) {
@@ -1622,7 +1848,29 @@ async function main() {
     }
 }
 
-main().catch(error => {
-    console.error(`[錯誤] 作業失敗：${error.message}`);
-    process.exitCode = 1;
-});
+if (require.main === module) {
+    main().catch(error => {
+        console.error(`[錯誤] 作業失敗：${error.message}`);
+        process.exitCode = 1;
+    });
+}
+
+module.exports = {
+    ENGINE_VERSION,
+    SIGNATURE_START,
+    SIGNATURE_END,
+    normalizeText,
+    loadDictionary,
+    generateJs,
+    cleanJsContent,
+    cleanMenuJsContent,
+    cleanTrayJsContent,
+    createMenuTranslationPatch,
+    createTrayCreatePatch,
+    patchMenuJs,
+    patchTrayJs,
+    patchElectronUiFiles,
+    verifyAsar,
+    install20,
+    restore20,
+};
