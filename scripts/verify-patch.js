@@ -338,6 +338,11 @@ function verifyDomTranslatorGeneration() {
         ['Next Page', '下一頁'],
         ['Open in Remote Control', '在遠端控制中開啟'],
         ['Enable sandbox mode', '啟用沙盒模式'],
+        ['Search settings', '搜尋設定'],
+        ['Needs you', '需要您處理'],
+        ['Saved securely. Secret values are hidden after saving.', '已安全儲存。機密數值在儲存後會隱藏。'],
+        ['Manage Hooks', '管理 Hooks'],
+        ['Cookies by Site', '依網站管理 Cookie'],
         ['Show 3 breakdowns', '顯示 3 項明細'],
         ['Resume 2 comment drafts', '繼續編輯 2 則留言草稿'],
         ['Setting up WSL: Ubuntu', '正在設定 WSL：Ubuntu'],
@@ -428,6 +433,22 @@ async function main() {
         const restoredHash = sha256(sandboxAsar);
         assert.strictEqual(restoredHash, originalHash, 'Restored app.asar SHA-256 does not match original');
         console.log('[PASS] Bit-for-bit restore verified (SHA-256 identical).');
+
+        // Stale backup refresh test: simulate an old unpatched app.asar.bak left over after an official update
+        console.log('[INFO] Testing stale app.asar.bak refresh after official Antigravity update...');
+        const staleSrcDir = path.join(sandboxRoot, 'stale-src');
+        asar.extractAll(sourceAsar, staleSrcDir);
+        const stalePreload = path.join(staleSrcDir, 'dist', 'preload.js');
+        fs.appendFileSync(stalePreload, '\n// simulated-older-official-version\n', 'utf-8');
+        const staleBakPath = path.join(resourcesDir, 'app.asar.bak');
+        await asar.createPackageWithOptions(staleSrcDir, staleBakPath, { unpackDir: 'node_modules/chrome-devtools-mcp' });
+        assert.notStrictEqual(sha256(staleBakPath), originalHash, 'Stale backup should differ from new official app.asar');
+
+        assert.strictEqual(engine.install20(resourcesDir), true, 'install20 with stale backup failed');
+        assert.strictEqual(sha256(staleBakPath), originalHash, 'app.asar.bak should have been refreshed to new official app.asar');
+        assert.strictEqual(engine.restore20(resourcesDir), true, 'restore20 after stale-backup refresh failed');
+        assert.strictEqual(sha256(sandboxAsar), originalHash, 'Restored app.asar should match new official SHA-256');
+        console.log('[PASS] Stale backup refresh verified.');
 
         console.log('\nALL VERIFICATION CHECKS PASSED!');
     } finally {

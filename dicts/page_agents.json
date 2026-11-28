@@ -141,5 +141,21 @@
     "Files modified by the agent in this conversation": "Agent 在此對話中修改的檔案",
     "New Agent Script": "新增 Agent 指令碼",
     "Workflow files": "工作流程檔案",
-    "Workflow refs": "工作流程參照"
+    "Workflow refs": "工作流程參照",
+    "Accept Step": "接受步驟",
+    "Reject Step": "拒絕步驟",
+    "Cancel step": "取消步驟",
+    "Delete Task": "刪除任務",
+    "Cancel All Tasks": "取消所有任務",
+    "Edit task title": "編輯任務標題",
+    "When it runs": "執行時機",
+    "Agents Options": "Agent 選項",
+    "Sidecar error": "Sidecar 錯誤",
+    "Debug and fix": "偵錯與修復",
+    "Switch Roles": "切換角色",
+    "Best of N": "Best of N",
+    "Best-of-N Ended": "Best-of-N 已結束",
+    "Read files": "讀取檔案",
+    "Write files": "寫入檔案",
+    "Admin escalation": "系統管理員權限提升"
 }

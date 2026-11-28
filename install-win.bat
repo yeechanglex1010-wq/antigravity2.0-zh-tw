@@ -61,6 +61,13 @@ if not "%exit_code%"=="0" (
 echo.
 echo [3/3] Done.
 echo.
+if exist "%LOCALAPPDATA%\Programs\antigravity\Antigravity.exe" (
+    choice /c YN /n /m "Relaunch Antigravity now? [Y/N]: "
+    if errorlevel 2 goto :skip_launch
+    start "" "%LOCALAPPDATA%\Programs\antigravity\Antigravity.exe"
+    exit /b 0
+)
+:skip_launch
 echo [Note] Restart Antigravity manually to apply changes.
 echo.
 pause

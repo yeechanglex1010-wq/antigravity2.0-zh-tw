@@ -168,5 +168,12 @@
     "Enable fine-grained GitHub permissions and define the org, repository, and resource-level access the agent is allowed to use.": "啟用細粒度 GitHub 權限，並定義允許 Agent 使用的組織、儲存庫與資源層級存取權。",
     "Connected Google Drive and GitHub resources": "已連結的 Google 雲端硬碟與 GitHub 資源",
     "Install or enable the Google Drive plugin in Customizations to search files with @drive: or paste Drive links": "在「個人化」中安裝或啟用 Google 雲端硬碟外掛，即可使用 @drive: 搜尋檔案或貼上雲端硬碟連結",
-    "Files, folders, and repositories you connect are accessible to your agent in this project, including during background or scheduled runs.": "您連結的檔案、資料夾與儲存庫，Agent 在此專案中（包括背景執行與排程執行期間）皆可存取。"
+    "Files, folders, and repositories you connect are accessible to your agent in this project, including during background or scheduled runs.": "您連結的檔案、資料夾與儲存庫，Agent 在此專案中（包括背景執行與排程執行期間）皆可存取。",
+    "Google Docs": "Google 文件",
+    "Google Sheets": "Google 試算表",
+    "Google Slides": "Google 簡報",
+    "Platform Token": "平台權杖",
+    "Org required": "需要組織權限",
+    "Org recommended": "建議使用組織權限",
+    "Manifest Changes": "資訊清單變更"
 }

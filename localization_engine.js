@@ -6,7 +6,7 @@ const crypto = require('crypto');
 
 const PROJECT_ID = 'antigravity2-zh-hant-tw';
 const PROJECT_NAME = 'Antigravity 2.0 繁體中文套件';
-const ENGINE_VERSION = '1.0.18';
+const ENGINE_VERSION = '1.0.19';
 const SIGNATURE = 'ZH-HANT-TW';
 
 const SIGNATURE_START = '/* --- ANTIGRAVITY ZH-HANT-TW LOCALIZATION START --- */';
@@ -60,9 +60,20 @@ function runAsarCommand(action, args) {
         return { success: false, stdout: '', stderr: '本地 @electron/asar 未安裝' };
     }
 
-    const nodeExe = process.execPath;
-    const cmd = `"${nodeExe}" "${asarCli}" ${action} ${args.map(a => `"${a}"`).join(' ')}`;
-    return runCommandSync(cmd);
+    try {
+        const out = child_process.execFileSync(process.execPath, [asarCli, action, ...args], {
+            encoding: 'utf-8',
+            stdio: 'pipe',
+            windowsHide: true
+        });
+        return { success: true, stdout: out || '', stderr: '' };
+    } catch (e) {
+        return {
+            success: false,
+            stdout: e.stdout ? e.stdout.toString() : '',
+            stderr: e.stderr ? e.stderr.toString() : e.message
+        };
+    }
 }
 
 function checkEnvironment() {
@@ -1496,15 +1507,38 @@ function verifySameFile(source, copy) {
     }
 }
 
+function isAsarLocalized(asarPath) {
+    try {
+        const asar = require('@electron/asar');
+        asar.uncache(asarPath);
+        const preload = asar.extractFile(asarPath, 'dist/preload.js').toString('utf-8');
+        return preload.includes(SIGNATURE_START) && preload.includes(SIGNATURE_END);
+    } catch (_) {
+        return false;
+    }
+}
+
 function ensureOfficialBackup(asarPath, bakPath, stagedPath) {
     if (fs.existsSync(bakPath)) {
         verifyAsar(bakPath, false);
-        console.log('[備份] 已存在 app.asar.bak，本次沿用既有備份。');
-        return;
+        if (!isAsarLocalized(asarPath)) {
+            const sameDigest = fs.statSync(asarPath).size === fs.statSync(bakPath).size
+                && fileDigest(asarPath) === fileDigest(bakPath);
+            if (sameDigest) {
+                console.log('[備份] 已存在 app.asar.bak，本次沿用既有備份。');
+                return;
+            }
+            verifyAsar(asarPath, false);
+            console.log('[備份] 偵測到新版官方 app.asar，正在更新 app.asar.bak 備份...');
+            fs.unlinkSync(bakPath);
+        } else {
+            console.log('[備份] 已存在 app.asar.bak，本次沿用既有備份。');
+            return;
+        }
+    } else {
+        verifyAsar(asarPath, false);
+        console.log('[備份] 正在建立官方 app.asar 備份...');
     }
-
-    verifyAsar(asarPath, false);
-    console.log('[備份] 正在建立官方 app.asar 備份...');
     try {
         try {
             fs.copyFileSync(asarPath, stagedPath, fs.constants.COPYFILE_EXCL);
@@ -1630,6 +1664,7 @@ function install20(resourcesDir) {
     const tempDir = path.join(transactionDir, 'unpacked');
     const unpackedDirs = collectUnpackedDirs(asarPath);
 
+    console.log('[提示] 正在套用中（約需 5～10 秒），請先不要重新開啟 Antigravity...');
     console.log('[展開] 正在展開 app.asar...');
     const extractRes = runAsarCommand('extract', [asarPath, tempDir]);
     if (!extractRes.success || !fs.existsSync(tempDir)) {
